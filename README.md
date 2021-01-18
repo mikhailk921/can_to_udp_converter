@@ -4,8 +4,6 @@ Convert can to UDP socket and back
 ## github project:
 * [can_to_udp_converter]
 
-[can_to_udp_converter]: https://github.com/mikhailk921/can_to_udp_converter
-
 ### Setup virtual device:
 ```bash
 sudo modprobe vcan
@@ -26,5 +24,7 @@ sudo ip link del vcan0
 
 ### Run converter
 ```bash
-./Converter.py -a 127.0.0.1 -d can0
+./Converter.py -a 127.0.0.1 -d can0 can1 can2
 ```
+
+[can_to_udp_converter]: https://github.com/mikhailk921/can_to_udp_converter

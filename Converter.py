@@ -3,18 +3,20 @@
 import argparse
 import select
 import struct
-#import can
+import can
 import socket
 import errno
 
 MESSAGE_DESC_SIZE = 4
 STARTING_PORT = 2000
+
+# Errors
 STATUS_ERROR = -1
 STATUS_OK = 0
 STATUS_TIMEOUT = 1
 
 
-def checkPort(port):
+def checkPort(port) -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("", port))
@@ -29,14 +31,14 @@ def checkPort(port):
     return True
 
 
-def getNextFreePort():
+def getNextFreePort() -> int:
     global STARTING_PORT
     if STARTING_PORT > 65535:
         STARTING_PORT = 1024
     while True:
         if checkPort(STARTING_PORT) is True:
             STARTING_PORT += 1
-            return STARTING_PORT -1
+            return STARTING_PORT - 1
         else:
             STARTING_PORT += 1
 
@@ -45,7 +47,7 @@ class CANToEthConverter:
     def __init__(self, nameCANInterface, ip, portToSend, portToReceive):
         self._nameCANInterface = nameCANInterface
         self._CANInterface = can.interface.Bus(channel=self._nameCANInterface, bustype='socketcan_native')
-        self._IP = ip
+        self._ip = ip
         self._portToSend = portToSend
         self._portToReceive = portToReceive
         self._socketToSend = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -104,10 +106,10 @@ class CANToEthConverter:
         try:
             dataSize = MESSAGE_DESC_SIZE + len(data)
             data = struct.pack("I", dataSize) + data
-            byteSent = sock.sendto(data, (self._IP, self._portToSend))
+            byteSent = sock.sendto(data, (self._ip, self._portToSend))
 
             while byteSent < dataSize:
-                size = sock.sendto(data[byteSent:], (self._IP, self._portToSend))
+                size = sock.sendto(data[byteSent:], (self._ip, self._portToSend))
                 if size == 0:
                     break
                 byteSent += size
@@ -130,10 +132,11 @@ class CANToEthConverter:
         self._socketToSend.close()
         self._socketToReceive.close()
 
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Process CAN data from a socket-can device.')
-    parser.add_argument('-a', dest='ip', default='')
-    parser.add_argument('-d', dest='devices', default=[], nargs="+")
+    parser = argparse.ArgumentParser(description='Converter CAN to UDP socket and back')
+    parser.add_argument('-a', '--address', dest='ip', default='', type=str, help="ip address")
+    parser.add_argument('-d', '--devices', dest='devices', default=[], nargs="+", help="Devices list")
     args = parser.parse_args()
 
     print("ip address: {}".format(args.ip))
@@ -142,7 +145,11 @@ if __name__ == '__main__':
     converterList = []
 
     for dev in args.devices:
-        converterList.append(CANToEthConverter(dev, args.ip, getNextFreePort(), getNextFreePort()))
+        portToSend = portToReceive = getNextFreePort()
+        converterList.append(CANToEthConverter(dev, args.ip, portToSend, portToReceive))
+
+    if len(converterList) == 0:
+        exit(0)
 
     while True:
         for conv in converterList:
