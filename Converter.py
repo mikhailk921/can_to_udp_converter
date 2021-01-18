@@ -56,12 +56,13 @@ class CANToEthConverter:
         self._timeout = 0.01
 
     def _readFromCANBus(self, CANInterface):
-        data = CANInterface.recv(self._timeout)
+        receivedData = CANInterface.recv(self._timeout)
         while True:
+            data = CANInterface.recv(self._timeout)
             if not data:
                 break
-            data = CANInterface.recv(self._timeout)
-        return data
+            receivedData += data
+        return receivedData
 
     def _sendToCANBus(self, CANInterface, arbitration_id=0x0, data=bytearray()):
         message = CANInterface.Message(arbitration_id=arbitration_id, data=list(data))
@@ -69,28 +70,26 @@ class CANToEthConverter:
 
     def _recvFromSockWithTimeout(self, sock, nbytes, timeout):
         import time
-        recData = bytearray()
+        receivedData = bytearray()
+        t0 = time.time()
         try:
-            t0 = time.time()
-            while len(recData) < nbytes:
+            while len(receivedData) < nbytes:
                 dt = timeout - (time.time() - t0)
                 if dt < 0:
-                    return STATUS_TIMEOUT, recData
+                    return STATUS_TIMEOUT, receivedData
                 r, w, e = select.select([sock], [], [], dt)
                 if sock in e:
-                    return STATUS_ERROR, recData
+                    return STATUS_ERROR, receivedData
                 if sock in r:
-                    data = bytearray(sock.recv(nbytes - len(recData)))
+                    data = bytearray(sock.recv(nbytes - len(receivedData)))
                     if not data:
-                        return STATUS_ERROR, recData
+                        return STATUS_ERROR, receivedData
                     t0 = time.time()
-                    recData += data
-                    if nbytes == len(recData):
-                        break
-            return STATUS_OK, recData
+                    receivedData += data
+            return STATUS_OK, receivedData
         except Exception as e:
             print(e)
-            return STATUS_ERROR, recData
+            return STATUS_ERROR, receivedData
 
     def _readFromEthSock(self, sock):
         global DESCRIPTION_MESSAGE_SIZE
@@ -142,15 +141,15 @@ if __name__ == '__main__':
     print("ip address: {}".format(args.ip))
     print("devices list: {}".format(args.devices))
 
+    if len(args.devices) == 0:
+        exit(0)
+
     converterList = []
 
     for dev in args.devices:
         portToSend = portToReceive = getNextFreePort()
         converterList.append(CANToEthConverter(dev, args.ip, portToSend, portToReceive))
 
-    if len(converterList) == 0:
-        exit(0)
-
     while True:
-        for conv in converterList:
-            conv.update()
+        for converter in converterList:
+            converter.update()
