@@ -7,7 +7,7 @@ import can
 import socket
 import errno
 
-MESSAGE_DESC_SIZE = 4
+DESCRIPTION_MESSAGE_SIZE = 4  # The first 4 bytes of the message describe its length in bytes
 STARTING_PORT = 2000
 
 # Errors
@@ -93,18 +93,18 @@ class CANToEthConverter:
             return STATUS_ERROR, recData
 
     def _readFromEthSock(self, sock):
-        global MESSAGE_DESC_SIZE
-        result, data = self._recvFromSockWithTimeout(sock, MESSAGE_DESC_SIZE, self._timeout)
+        global DESCRIPTION_MESSAGE_SIZE
+        result, data = self._recvFromSockWithTimeout(sock, DESCRIPTION_MESSAGE_SIZE, self._timeout)
         if not data or result != STATUS_OK:
             return None
-        messageSize = struct.unpack_from("<I", memoryview(data).tobytes(), 0)[0] - MESSAGE_DESC_SIZE
+        messageSize = struct.unpack_from("<I", memoryview(data).tobytes(), 0)[0] - DESCRIPTION_MESSAGE_SIZE
         result, data = self._recvFromSockWithTimeout(sock, messageSize, self._timeout)
         return None if not data or result != STATUS_OK else data
 
     def _sendToEthSock(self, sock, data):
-        global MESSAGE_DESC_SIZE
+        global DESCRIPTION_MESSAGE_SIZE
         try:
-            dataSize = MESSAGE_DESC_SIZE + len(data)
+            dataSize = DESCRIPTION_MESSAGE_SIZE + len(data)
             data = struct.pack("I", dataSize) + data
             byteSent = sock.sendto(data, (self._ip, self._portToSend))
 
