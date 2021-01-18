@@ -3,12 +3,15 @@
 import argparse
 import select
 import struct
-import can
+#import can
 import socket
 import errno
 
-MESSAGE_SIZE = 4
+MESSAGE_DESC_SIZE = 4
 STARTING_PORT = 2000
+STATUS_ERROR = -1
+STATUS_OK = 0
+STATUS_TIMEOUT = 1
 
 
 def checkPort(port):
@@ -28,6 +31,8 @@ def checkPort(port):
 
 def getNextFreePort():
     global STARTING_PORT
+    if STARTING_PORT > 65535:
+        STARTING_PORT = 1024
     while True:
         if checkPort(STARTING_PORT) is True:
             STARTING_PORT += 1
@@ -37,18 +42,18 @@ def getNextFreePort():
 
 
 class CANToEthConverter:
-    def __init__(self, nameCANInterface, IP, sendPort, recPort):
+    def __init__(self, nameCANInterface, ip, portToSend, portToReceive):
         self._nameCANInterface = nameCANInterface
         self._CANInterface = can.interface.Bus(channel=self._nameCANInterface, bustype='socketcan_native')
-        self._IP = IP
-        self._sendPort = sendPort
-        self._recPort = recPort
-        self._sendSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._recSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._recSocket.bind(('', self._recPort))
+        self._IP = ip
+        self._portToSend = portToSend
+        self._portToReceive = portToReceive
+        self._socketToSend = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socketToReceive = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socketToReceive.bind(('', self._portToReceive))
         self._timeout = 0.01
 
-    def readFromCANBus(self, CANInterface):
+    def _readFromCANBus(self, CANInterface):
         data = CANInterface.recv(self._timeout)
         while True:
             if not data:
@@ -56,40 +61,53 @@ class CANToEthConverter:
             data = CANInterface.recv(self._timeout)
         return data
 
-    def sendToCANBus(self, CANInterface, arbitration_id=0x0, data=[]):
+    def _sendToCANBus(self, CANInterface, arbitration_id=0x0, data=bytearray()):
         message = CANInterface.Message(arbitration_id=arbitration_id, data=list(data))
         CANInterface.send(message)
 
-    def readFromEthSock(self, sock):
+    def _recvFromSockWithTimeout(self, sock, nbytes, timeout):
         import time
-        recMess = bytearray()
+        recData = bytearray()
         try:
             t0 = time.time()
-            while self._timeout > (time.time() - t0):
-                dt = self._timeout - (time.time() - t0)
+            while len(recData) < nbytes:
+                dt = timeout - (time.time() - t0)
+                if dt < 0:
+                    return STATUS_TIMEOUT, recData
                 r, w, e = select.select([sock], [], [], dt)
                 if sock in e:
-                    return -1, recMess
+                    return STATUS_ERROR, recData
                 if sock in r:
-                    data = bytearray(sock.recv())
+                    data = bytearray(sock.recv(nbytes - len(recData)))
                     if not data:
-                        return 0, recMess
-                    recMess += data
+                        return STATUS_ERROR, recData
                     t0 = time.time()
-            return 0, recMess
+                    recData += data
+                    if nbytes == len(recData):
+                        break
+            return STATUS_OK, recData
         except Exception as e:
             print(e)
-            return -1, recMess
+            return STATUS_ERROR, recData
 
-    def sendToEthSock(self, sock, data):
+    def _readFromEthSock(self, sock):
+        global MESSAGE_DESC_SIZE
+        result, data = self._recvFromSockWithTimeout(sock, MESSAGE_DESC_SIZE, self._timeout)
+        if not data or result != STATUS_OK:
+            return None
+        messageSize = struct.unpack_from("<I", memoryview(data).tobytes(), 0)[0] - MESSAGE_DESC_SIZE
+        result, data = self._recvFromSockWithTimeout(sock, messageSize, self._timeout)
+        return None if not data or result != STATUS_OK else data
+
+    def _sendToEthSock(self, sock, data):
+        global MESSAGE_DESC_SIZE
         try:
-            dataSize = MESSAGE_SIZE + len(data)
+            dataSize = MESSAGE_DESC_SIZE + len(data)
             data = struct.pack("I", dataSize) + data
-
-            byteSent = sock.sendto(data, (self._IP, self._sendPort))
+            byteSent = sock.sendto(data, (self._IP, self._portToSend))
 
             while byteSent < dataSize:
-                size = sock.sendto(data[byteSent:], (self._IP, self._sendPort))
+                size = sock.sendto(data[byteSent:], (self._IP, self._portToSend))
                 if size == 0:
                     break
                 byteSent += size
@@ -98,19 +116,34 @@ class CANToEthConverter:
             print(e)
             return -1
 
-    def run(self):
+    def update(self):
         while True:
-            dataFromCAN = self.readFromCANBus(self._CANInterface)
+            dataFromCAN = self._readFromCANBus(self._CANInterface)
             if dataFromCAN is not None:
-                pass
-            status, dataFromSock = self.readFromEthSock(self._recSocket)
-            if dataFromSock is not None and status == 0:
-                pass
+                self._sendToEthSock(self._socketToSend, dataFromCAN)
+            dataFromSock = self._readFromEthSock(self._socketToReceive)
+            if dataFromSock is not None:
+                # parse message
+                self._sendToCANBus(self._CANInterface, data=dataFromSock)
+
+    def __del__(self):
+        self._socketToSend.close()
+        self._socketToReceive.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process CAN data from a socket-can device.')
-    parser.add_argument('ip', default='')
-    parser.add_argument('nameCANInterface', default='can0')
+    parser.add_argument('-a', dest='ip', default='')
+    parser.add_argument('-d', dest='devices', default=[], nargs="+")
     args = parser.parse_args()
 
-    converter = CANToEthConverter(args.nameCANInterface, args.ip, getNextFreePort(), getNextFreePort())
+    print("ip address: {}".format(args.ip))
+    print("devices list: {}".format(args.devices))
+
+    converterList = []
+
+    for dev in args.devices:
+        converterList.append(CANToEthConverter(dev, args.ip, getNextFreePort(), getNextFreePort()))
+
+    while True:
+        for conv in converterList:
+            conv.update()

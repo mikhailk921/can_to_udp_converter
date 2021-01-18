@@ -26,5 +26,5 @@ sudo ip link del vcan0
 
 ### Run converter
 ```bash
-./Converter.py "127.0.0.1" can0
+./Converter.py -a 127.0.0.1 -d can0
 ```
