@@ -8,7 +8,7 @@ import socket
 import errno
 
 DESCRIPTION_MESSAGE_SIZE = 4  # The first 4 bytes of the message describe its length in bytes
-STARTING_PORT = 2000
+STARTING_PORT = 20000
 
 # Errors
 STATUS_ERROR = -1
@@ -16,7 +16,7 @@ STATUS_OK = 0
 STATUS_TIMEOUT = 1
 
 
-def checkPort(port) -> bool:
+def isFreePort(port) -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("", port))
@@ -35,9 +35,9 @@ def getNextFreePort() -> int:
     global STARTING_PORT
     STARTING_PORT += 1
     if STARTING_PORT > 65535:
-        STARTING_PORT = 1024
+        STARTING_PORT = 20000
     while True:
-        if checkPort(STARTING_PORT) is True:
+        if isFreePort(STARTING_PORT) is True:
             return STARTING_PORT
         else:
             STARTING_PORT += 1
