@@ -33,12 +33,12 @@ def checkPort(port) -> bool:
 
 def getNextFreePort() -> int:
     global STARTING_PORT
+    STARTING_PORT += 1
     if STARTING_PORT > 65535:
         STARTING_PORT = 1024
     while True:
         if checkPort(STARTING_PORT) is True:
-            STARTING_PORT += 1
-            return STARTING_PORT - 1
+            return STARTING_PORT
         else:
             STARTING_PORT += 1
 
