@@ -118,14 +118,13 @@ class CANToEthConverter:
             return -1
 
     def update(self):
-        while True:
-            dataFromCAN = self._readFromCANBus(self._CANInterface)
-            if dataFromCAN is not None:
-                self._sendToEthSock(self._socketToSend, dataFromCAN)
-            dataFromSock = self._readFromEthSock(self._socketToReceive)
-            if dataFromSock is not None:
-                # parse message
-                self._sendToCANBus(self._CANInterface, data=dataFromSock)
+        dataFromCAN = self._readFromCANBus(self._CANInterface)
+        if dataFromCAN is not None:
+            self._sendToEthSock(self._socketToSend, dataFromCAN)
+        dataFromSock = self._readFromEthSock(self._socketToReceive)
+        if dataFromSock is not None:
+            # parse message
+            self._sendToCANBus(self._CANInterface, data=dataFromSock)
 
     def __del__(self):
         self._socketToSend.close()
@@ -142,7 +141,7 @@ if __name__ == '__main__':
     print("devices list: {}".format(args.devices))
 
     if len(args.devices) == 0:
-        exit(0)
+        exit(STATUS_ERROR)
 
     converterList = []
 
