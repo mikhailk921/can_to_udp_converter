@@ -58,7 +58,8 @@ class CANToEthConverter:
     def _readFromCANBus(self, CANInterface):
         receivedData = CANInterface.recv(self._timeout)
         while True:
-            data = CANInterface.recv(self._timeout)
+            msg = CANInterface.recv(self._timeout)
+            data = msg.data()
             if not data:
                 break
             receivedData += data
